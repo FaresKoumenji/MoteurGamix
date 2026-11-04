@@ -1,8 +1,8 @@
 using System;
 
 /// <summary>
-/// Corps déformable cassable : bloc nx x ny x nz de particules sur un réseau cubique, reliées par
-/// des ressorts rompables (article FLEX, sections 5.3 et 8 : déformation, rupture des contraintes).
+/// Corps déformable cassable : bloc nx x ny x nz de particules sur un réseau cubique,
+/// reliées par des ressorts rompables (article FLEX, sections 5.3 et 8 : déformation, rupture).
 ///   - voisins de face : ressorts structurels ;
 ///   - arêtes et diagonales du cube : ressorts de cisaillement (k/2), sinon le bloc s'écrase.
 /// Quand un ressort dépasse L0 (1 + seuilRupture) il casse : le bloc se fissure puis se fragmente.
@@ -54,7 +54,7 @@ public class CorpsDeformable
                                 int ni = ii + di, nj = jj + dj, nk = kk + dk;
                                 if (ni < 0 || ni >= nx || nj < 0 || nj >= ny || nk < 0 || nk >= nz) continue;
 
-                                int ordre = Math.Abs(di) + Math.Abs(dj) + Math.Abs(dk);   // 1 face, 2 arête, 3 diagonale
+                                int ordre = Math.Abs(di) + Math.Abs(dj) + Math.Abs(dk);
                                 bool face = (ordre == 1);
                                 ressorts.Ajouter(systeme, a, Index(ni, nj, nk),
                                                  face ? raideur : raideur * 0.5f, c,

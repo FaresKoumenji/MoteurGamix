@@ -1,14 +1,27 @@
 using System;
+using System.Collections.Generic;
 
+/// <summary>
+/// Contrainte de densité unilatérale (FLEX §7, Eq. 26) : C_i = rho_i / rho0 - 1 <= 0.
+/// Projection PBD : lambda_i = -C_i / ( sum_k w_k |grad_k C_i|^2 + eps ),  dx_k = w_k . lambda_i . grad_k C_i
+///   grad_i C_i = (1/rho0) sum_j m_j gradW(xi - xj)      grad_j C_i = -(m_j/rho0) gradW(xi - xj)
+/// </summary>
 public class ContrainteDensite : IContrainte
 {
     public float h = 0.2f;
     public float rho0 = 1000f;
     public float lambdaRelaxation = 1f;
+    public int iterations = 3;          // passes de Gauss-Seidel par appel
+    public float epsilon = 1e-4f;       // régularisation du dénominateur
+    public float rayonContact = 0f;     // distance minimale entre 2 particules (0 = désactivé), FLEX Eq. 22
     public GrilleVoisins grille;
 
     float poly6;
     float spiky;
+
+    CustomVector3[] pos;
+    List<int>[] vois;
+    readonly List<CustomVector3> gBuf = new List<CustomVector3>(64);
 
     public ContrainteDensite(float h, float rho0)
     {
@@ -35,76 +48,121 @@ public class ContrainteDensite : IContrainte
         return r * (spiky * d * d / rl);
     }
 
+    void Preparer(SystemeParticules s)
+    {
+        int N = s.N;
+        if (pos == null || pos.Length != N)
+        {
+            pos = new CustomVector3[N];
+            vois = new List<int>[N];
+            for (int i = 0; i < N; i++) vois[i] = new List<int>(32);
+        }
+        for (int i = 0; i < N; i++) pos[i] = s.p[i].x;
+
+        // Voisins trouvés une fois au début (comme FLEX §9), pas à chaque itération
+        grille.Construire(pos, N);
+        for (int i = 0; i < N; i++) grille.Voisins(pos, i, vois[i]);
+    }
+
     public void Projeter(SystemeParticules s)
     {
         int N = s.N;
         if (N == 0) return;
 
-        // Construire la grille avec les positions ACTUELLES
-        CustomVector3[] positions = new CustomVector3[N];
-        for (int i = 0; i < N; i++) positions[i] = s.p[i].x;
-        grille.Construire(positions, N);
-
+        Preparer(s);
         float w0 = Poly6(0f);
 
-        // 1) Densité de chaque particule
-        float[] rho = new float[N];
-        for (int i = 0; i < N; i++)
-        {
-            float ri = 0f;
-            int self = i;
-            grille.PourChaqueVoisin(positions, i, j =>
-            {
-                CustomVector3 d = positions[self] - positions[j];
-                ri += s.p[j].m * Poly6(d.sqrMagnitude);
-            });
-            ri += s.p[i].m * w0;
-            rho[i] = ri;
-        }
-
-        // 2) Correction itérative (2 passes pour stabiliser)
-        for (int passe = 0; passe < 2; passe++)
+        for (int it = 0; it < iterations; it++)
         {
             for (int i = 0; i < N; i++)
             {
-                if (s.p[i].invmass <= 0f) continue;
-                float C = rho[i] / rho0 - 1f;
-                if (C <= 0f) continue;
+                float mi = s.p[i].m;
+                if (mi <= 0f) continue;
+                List<int> vi = vois[i];
 
-                CustomVector3 grad = CustomVector3.zero;
-                int self = i;
-                grille.PourChaqueVoisin(positions, i, j =>
+                // densité courante de i
+                float rho = mi * w0;
+                for (int q = 0; q < vi.Count; q++)
                 {
-                    CustomVector3 d = positions[self] - positions[j];
-                    grad += SpikyGradient(d) * s.p[j].m;
-                });
-                grad = grad * (1f / rho0);
+                    int j = vi[q];
+                    rho += s.p[j].m * Poly6((pos[i] - pos[j]).sqrMagnitude);
+                }
 
-                float denom = grad.sqrMagnitude;
-                if (denom < 1e-12f) continue;
+                float C = rho / rho0 - 1f;
+                if (C <= 0f) continue;                  // unilatérale : sépare seulement
 
-                float lambda = -C / denom;
-                CustomVector3 dx = grad * (lambda * s.p[i].invmass * lambdaRelaxation);
-                s.p[i].x = s.p[i].x + dx;
+                // gradients
+                CustomVector3 gi = CustomVector3.zero;
+                float den = 0f;
+                gBuf.Clear();
+                for (int q = 0; q < vi.Count; q++)
+                {
+                    int j = vi[q];
+                    CustomVector3 g = SpikyGradient(pos[i] - pos[j]) * (s.p[j].m / rho0);
+                    gBuf.Add(g);
+                    gi += g;
+                    den += s.p[j].invmass * g.sqrMagnitude;     // |grad_j C_i|^2 = |g|^2
+                }
+                den += s.p[i].invmass * gi.sqrMagnitude + epsilon;
 
-                // Mettre à jour la position dans le buffer pour la 2e passe
-                positions[i] = s.p[i].x;
+                float lambda = -C / den * lambdaRelaxation;
+
+                // déplacer i
+                if (s.p[i].invmass > 0f)
+                {
+                    s.p[i].x = s.p[i].x + gi * (s.p[i].invmass * lambda);
+                    pos[i] = s.p[i].x;
+                }
+                // déplacer les voisins (grad_j C_i = -g)
+                for (int q = 0; q < vi.Count; q++)
+                {
+                    int j = vi[q];
+                    float wj = s.p[j].invmass;
+                    if (wj <= 0f) continue;
+                    s.p[j].x = s.p[j].x + gBuf[q] * (-wj * lambda);
+                    pos[j] = s.p[j].x;
+                }
             }
 
-            // Recalculer la densité pour la 2e passe
-            if (passe == 0)
+            if (rayonContact > 0f) ProjeterContacts(s);
+        }
+    }
+
+    /// <summary>
+    /// Contrainte de contact C(xi,xj) = |xij| - r >= 0 (FLEX Eq. 22), répartie selon les masses inverses.
+    /// Nécessaire car la contrainte de densité est unilatérale : en surface rho &lt; rho0, donc rien ne sépare
+    /// deux particules qui se chevauchent.
+    /// </summary>
+    void ProjeterContacts(SystemeParticules s)
+    {
+        int N = s.N;
+        float r = rayonContact;
+        float r2 = r * r;
+
+        for (int i = 0; i < N; i++)
+        {
+            float wi = s.p[i].invmass;
+            List<int> vi = vois[i];
+            for (int q = 0; q < vi.Count; q++)
             {
-                for (int i = 0; i < N; i++)
-                {
-                    float ri = s.p[i].m * w0;
-                    int self = i;
-                    grille.PourChaqueVoisin(positions, i, j =>
-                    {
-                        CustomVector3 d = positions[self] - positions[j];
-                        ri += s.p[j].m * Poly6(d.sqrMagnitude);
-                    });
-                    rho[i] = ri;
-                }
+                int j = vi[q];
+                if (j <= i) continue;                       // chaque paire une seule fois
+                float wj = s.p[j].invmass;
+                float ws = wi + wj;
+                if (ws <= 0f) continue;
+
+                CustomVector3 d = pos[i] - pos[j];
+                float d2 = d.sqrMagnitude;
+                if (d2 >= r2) continue;
+
+                CustomVector3 n;
+                float dist;
+                if (d2 < 1e-12f) { n = new CustomVector3(0f, 1f, 0f); dist = 0f; }   // particules confondues
+                else { dist = (float)Math.Sqrt(d2); n = d * (1f / dist); }
+
+                float pen = r - dist;
+                if (wi > 0f) { s.p[i].x = s.p[i].x + n * (pen * wi / ws); pos[i] = s.p[i].x; }
+                if (wj > 0f) { s.p[j].x = s.p[j].x + n * (-pen * wj / ws); pos[j] = s.p[j].x; }
             }
         }
     }

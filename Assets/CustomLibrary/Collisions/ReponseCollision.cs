@@ -6,6 +6,10 @@ public static class ReponseCollision
 {
     public static int nbContactsResolus;
 
+    // Correction positionnelle : tolérance + fraction corrigée par passe (réduit le jitter)
+    const float slop = 0.01f;
+    const float pourcentage = 0.8f;
+
     public static void ResoudreContacts(List<Contact> contacts, List<CustomRigidbody> corps,
                                         float dt, float restitution, float frottement)
     {
@@ -25,8 +29,9 @@ public static class ReponseCollision
 
             if (wSum <= 1e-6f) continue;
 
-            // 1) Séparation positionnelle
-            CustomVector3 correction = c.normale * (c.profondeur / wSum);
+            // 1) Séparation positionnelle (avec slop)
+            float prof = Math.Max(c.profondeur - slop, 0f) * pourcentage;
+            CustomVector3 correction = c.normale * (prof / wSum);
             if (wA > 0f) A.Translater(-correction * wA);
             if (wB > 0f) B.Translater(correction * wB);
 
@@ -68,14 +73,13 @@ public static class ReponseCollision
             }
         }
 
-        // ★ 4) Correction post-séparation : annule la vitesse qui pénètre encore
+        // 4) Correction post-séparation : annule la vitesse qui pénètre encore
         StopperVitesseNormale(contacts, corps);
     }
 
     /// <summary>
-    /// Pour chaque contact, si un corps a une vitesse qui pointe dans la direction
-    /// de la pénétration (vers l'autre corps), on annule cette composante.
-    /// Empêche la boule de "s'enfoncer" à cause de la gravité qui pousse à chaque frame.
+    /// Pour chaque contact, si un corps a une vitesse qui pointe vers l'autre corps,
+    /// on annule cette composante. Les corps statiques (invMass = 0) sont ignorés.
     /// </summary>
     static void StopperVitesseNormale(List<Contact> contacts, List<CustomRigidbody> corps)
     {
@@ -91,18 +95,18 @@ public static class ReponseCollision
             if (A.invMass > 0f)
             {
                 float vnA = CustomVector3.Dot(A.velocity, c.normale);
-                if (vnA > 0f)   // A va vers B → annuler
+                if (vnA > 0f)
                 {
                     CustomVector3 delta = c.normale * (vnA * A.Mass);
                     A.state.P = A.state.P - delta;
                     A.ForcerRefresh();
                 }
             }
-            // B est poussé vers A (normale de A vers B → composante négative)
+            // B est poussé vers A
             if (B.invMass > 0f)
             {
                 float vnB = CustomVector3.Dot(B.velocity, c.normale);
-                if (vnB < 0f)   // B va vers A → annuler
+                if (vnB < 0f)
                 {
                     CustomVector3 delta = c.normale * (vnB * B.Mass);
                     B.state.P = B.state.P - delta;

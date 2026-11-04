@@ -8,26 +8,26 @@ public class Fluide
     public float h = 0.2f;
     public float rho0 = 1000f;
 
+    /// <summary>
+    /// N = nombre de particules VISÉ. Le réseau est cubique (espacement identique en x, y, z),
+    /// donc le nombre réel est nx*ny*nz (voir systeme.N).
+    /// </summary>
     public Fluide(int N, CustomVector3 origine, CustomVector3 taille, float h = 0.2f, float rho0 = 1000f)
     {
         this.rho0 = rho0;
 
-        int n = Math.Max(1, N);
-        systeme = new SystemeParticules(n, "Fluide");
-        systeme.mode = ModeIntegration.EulerSemiImplicite;
-        systeme.sousPas = 8;
-        systeme.vitesseMax = 3f;
-
         // Cas N = 0 : pas d'eau, on désactive tout
         if (N <= 0)
         {
-            for (int i = 0; i < n; i++)
-            {
-                systeme.p[i].x = origine;
-                systeme.p[i].m = 0f;
-                systeme.p[i].invmass = 0f;
-                systeme.p[i].v = CustomVector3.zero;
-            }
+            systeme = new SystemeParticules(1, "Fluide");
+            systeme.mode = ModeIntegration.EulerSemiImplicite;
+            systeme.sousPas = 8;
+            systeme.vitesseMax = 3f;
+            systeme.p[0].x = origine;
+            systeme.p[0].m = 0f;
+            systeme.p[0].invmass = 0f;
+            systeme.p[0].v = CustomVector3.zero;
+
             this.h = Math.Max(h, 1e-3f);
             contrainteDensite = new ContrainteDensite(this.h, rho0);
             contrainteDensite.lambdaRelaxation = 1f;
@@ -35,24 +35,36 @@ public class Fluide
             return;
         }
 
-        int cote = (int)Math.Ceiling(Math.Pow(N, 1.0 / 3.0));
-        if (cote < 1) cote = 1;
+        // Réseau cubique : espacement visé s0 = (V/N)^(1/3), puis nombre de particules par axe
+        float volume = taille.x * taille.y * taille.z;
+        float s0 = (float)Math.Pow(volume / N, 1.0 / 3.0);
+        if (s0 < 1e-4f) s0 = 1e-4f;
 
-        float dx = taille.x / cote;
-        float dy = taille.y / cote;
-        float dz = taille.z / cote;
+        int nx = Math.Max(1, (int)Math.Round(taille.x / s0));
+        int ny = Math.Max(1, (int)Math.Round(taille.y / s0));
+        int nz = Math.Max(1, (int)Math.Round(taille.z / s0));
+        int n = nx * ny * nz;
 
-        float espacement = (dx + dy + dz) / 3f;
-        if (espacement < 1e-4f) espacement = 1e-4f;
+        systeme = new SystemeParticules(n, "Fluide");
+        systeme.mode = ModeIntegration.EulerSemiImplicite;
+        systeme.sousPas = 8;
+        systeme.vitesseMax = 3f;
+
+        float dx = taille.x / nx;
+        float dy = taille.y / ny;
+        float dz = taille.z / nz;
+
+        // espacement effectif = racine cubique du volume d'une cellule du réseau
+        float espacement = (float)Math.Pow(dx * dy * dz, 1.0 / 3.0);
 
         float m = rho0 * espacement * espacement * espacement;
-        this.h = Math.Max(h, espacement * 2.2f);
+        this.h = Math.Max(h, espacement * 2.2f);   // h ~ 2.2 s : somme du noyau ~ 1 sur le réseau
         if (this.h < 1e-3f) this.h = 1e-3f;
 
         int idx = 0;
-        for (int k = 0; k < cote && idx < n; k++)
-            for (int j = 0; j < cote && idx < n; j++)
-                for (int i = 0; i < cote && idx < n; i++)
+        for (int k = 0; k < nz; k++)
+            for (int j = 0; j < ny; j++)
+                for (int i = 0; i < nx; i++)
                 {
                     float px = origine.x + (i + 0.5f) * dx;
                     float py = origine.y + (j + 0.5f) * dy;
@@ -64,18 +76,13 @@ public class Fluide
                     systeme.p[idx].phase = 1;
                     idx++;
                 }
-        for (; idx < n; idx++)
-        {
-            systeme.p[idx].x = origine;
-            systeme.p[idx].m = 0f;
-            systeme.p[idx].invmass = 0f;
-        }
 
         systeme.forces.Add(new ForceGravite(new CustomVector3(0f, -9.81f, 0f)));
         systeme.forces.Add(new ForceTrainee(0.1f));
 
         contrainteDensite = new ContrainteDensite(this.h, rho0);
         contrainteDensite.lambdaRelaxation = 1f;
+        contrainteDensite.rayonContact = 0.95f * espacement;   // distance min entre particules (FLEX Eq. 22)
         couplage = new CouplageFluideSolide(this.h, rho0);
     }
 

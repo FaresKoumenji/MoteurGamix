@@ -22,6 +22,7 @@ public class CustomRigidbody : MonoBehaviour
     [Header("Masse")]
     public float mass = 1f;
     public bool hasGravity = true;
+    public bool estStatique;   // ★ corps immobile : invMass = 0, jamais intégré ni déplacé
 
     [Header("Résistance")]
     public float drag = 0.05f;
@@ -54,7 +55,7 @@ public class CustomRigidbody : MonoBehaviour
     private AABB volume;
 
     public float Mass => Math.Max(0.0001f, mass);
-    public float invMass => (mass <= 0f) ? 0f : 1f / mass;
+    public float invMass => (estStatique || mass <= 0f) ? 0f : 1f / mass;   // ★
     public CustomVector3 CentreMonde => Application.isPlaying ? state.x : initialPosition;
     public CustomVector3 WorldCenterOfMass => CentreMonde;
     public AABB Volume => volume;

@@ -21,6 +21,11 @@ public class BoulesDansEau : MonoBehaviour
     [Header("Caméra")]
     public bool placerCameraAutomatiquement = true;
 
+    // Épaisseur des murs PHYSIQUES (épais : évite que le centre d'une boule se retrouve dans le mur)
+    const float epPhys = 2f;
+    // Épaisseur des murs affichés
+    const float epRendu = 0.2f;
+
     private PhysicsWorld monde;
     private Fluide eau;
     private float d;
@@ -82,21 +87,24 @@ public class BoulesDansEau : MonoBehaviour
             eau.couplage.solides.Add(rb);
         }
 
-        // Murs
-        float ep = 0.2f;
-        CreerMurPhysique(new Vector3(0, -d - ep * 0.5f, 0), new Vector3(cote + 2, ep, cote + 2), "Sol");
-        CreerMurPhysique(new Vector3(-d - ep * 0.5f, 0, 0), new Vector3(ep, cote, cote), "MurGauche");
-        CreerMurPhysique(new Vector3(d + ep * 0.5f, 0, 0), new Vector3(ep, cote, cote), "MurDroit");
-        CreerMurPhysique(new Vector3(0, 0, -d - ep * 0.5f), new Vector3(cote, cote, ep), "MurArriere");
-        CreerMurPhysique(new Vector3(0, 0, d + ep * 0.5f), new Vector3(cote, cote, ep), "MurAvant");
+        // Murs physiques : face intérieure exactement à ±d, face du dessus du sol à y = -d
+        float e = epPhys;
+        float h = e * 0.5f;
+        CreerMurPhysique(new Vector3(0, -d - h, 0), new Vector3(cote + 2 * e, e, cote + 2 * e), "Sol");
+        CreerMurPhysique(new Vector3(-d - h, 0, 0), new Vector3(e, cote, cote), "MurGauche");
+        CreerMurPhysique(new Vector3(d + h, 0, 0), new Vector3(e, cote, cote), "MurDroit");
+        CreerMurPhysique(new Vector3(0, 0, -d - h), new Vector3(cote, cote, e), "MurArriere");
+        CreerMurPhysique(new Vector3(0, 0, d + h), new Vector3(cote, cote, e), "MurAvant");
 
-        // Rendu
+        // Rendu : mêmes faces intérieures que la physique
+        float r = epRendu;
+        float rh = r * 0.5f;
         var rendu = RenduSolide.Obtenir();
         rendu.AjouterCubeFixe(new Vector3(0, -d - 0.25f, 0), new Vector3(cote + 2, 0.5f, cote + 2), new Color(0.7f, 0.7f, 0.7f));
-        rendu.AjouterCubeFixe(new Vector3(-d - ep, 0, 0), new Vector3(ep, cote, cote), new Color(0.6f, 0.6f, 0.6f));
-        rendu.AjouterCubeFixe(new Vector3(d + ep, 0, 0), new Vector3(ep, cote, cote), new Color(0.6f, 0.6f, 0.6f));
-        rendu.AjouterCubeFixe(new Vector3(0, 0, -d - ep), new Vector3(cote, cote, ep), new Color(0.6f, 0.6f, 0.6f));
-        rendu.AjouterCubeFixe(new Vector3(0, 0, d + ep), new Vector3(cote, cote, ep), new Color(0.6f, 0.6f, 0.6f));
+        rendu.AjouterCubeFixe(new Vector3(-d - rh, 0, 0), new Vector3(r, cote, cote), new Color(0.6f, 0.6f, 0.6f));
+        rendu.AjouterCubeFixe(new Vector3(d + rh, 0, 0), new Vector3(r, cote, cote), new Color(0.6f, 0.6f, 0.6f));
+        rendu.AjouterCubeFixe(new Vector3(0, 0, -d - rh), new Vector3(cote, cote, r), new Color(0.6f, 0.6f, 0.6f));
+        rendu.AjouterCubeFixe(new Vector3(0, 0, d + rh), new Vector3(cote, cote, r), new Color(0.6f, 0.6f, 0.6f));
 
         if (nbParticulesEau > 0)
             rendu.AjouterParticules(eau.systeme, eau.h * 0.22f, new Color(0.2f, 0.6f, 1f));
@@ -127,6 +135,7 @@ public class BoulesDansEau : MonoBehaviour
 
         rb.mass = 100000f;
         rb.hasGravity = false;
+        rb.estStatique = true;   // ★ invMass = 0, jamais intégré, jamais déplacé
         rb.initialPosition = new CustomVector3(centre.x, centre.y, centre.z);
 
         var cube = go.GetComponent<CustomCube>();

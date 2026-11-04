@@ -51,17 +51,37 @@ public class GrilleVoisins
     {
         var ci = Cellule(x[i]);
         for (int dx = -1; dx <= 1; dx++)
-        for (int dy = -1; dy <= 1; dy++)
-        for (int dz = -1; dz <= 1; dz++)
-        {
-            var k = (ci.Item1 + dx, ci.Item2 + dy, ci.Item3 + dz);
-            if (!cellules.TryGetValue(k, out var l)) continue;
-            for (int q = 0; q < l.Count; q++)
-            {
-                int j = l[q];
-                if (j == i) continue;
-                action(j);
-            }
-        }
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dz = -1; dz <= 1; dz++)
+                {
+                    var k = (ci.Item1 + dx, ci.Item2 + dy, ci.Item3 + dz);
+                    if (!cellules.TryGetValue(k, out var l)) continue;
+                    for (int q = 0; q < l.Count; q++)
+                    {
+                        int j = l[q];
+                        if (j == i) continue;
+                        action(j);
+                    }
+                }
+    }
+
+    /// <summary>Même parcours, mais remplit une liste réutilisable (sans lambda, sans allocation).</summary>
+    public void Voisins(CustomVector3[] x, int i, List<int> sortie)
+    {
+        sortie.Clear();
+        var ci = Cellule(x[i]);
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dz = -1; dz <= 1; dz++)
+                {
+                    var k = (ci.Item1 + dx, ci.Item2 + dy, ci.Item3 + dz);
+                    if (!cellules.TryGetValue(k, out var l)) continue;
+                    for (int q = 0; q < l.Count; q++)
+                    {
+                        int j = l[q];
+                        if (j == i) continue;
+                        sortie.Add(j);
+                    }
+                }
     }
 }
