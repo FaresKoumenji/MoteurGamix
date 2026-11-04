@@ -1,14 +1,7 @@
 using System;
 
-/// <summary>
-/// Phase étroite (Ch.4, slides 30–46) : tests exacts.
-///   - SphereSphere  : slide 31 (comparer les carrés, pas de racine).
-///   - SphereAABB    : slide 37 (point le plus proche par clamp).
-///   - OverlapOBB    : slide 45–46 (SAT, 15 axes, ignorer les produits quasi nuls).
-/// </summary>
 public static class PhaseEtroite
 {
-    // -------- Sphère / Sphère (slide 31) --------
     public static bool SphereSphere(CustomVector3 cA, float rA,
                                     CustomVector3 cB, float rB,
                                     out Contact c)
@@ -27,14 +20,12 @@ public static class PhaseEtroite
         return true;
     }
 
-    // -------- Sphère / AABB (slide 37) --------
     public static bool SphereAABB(CustomVector3 c, float r, in AABB b, out CustomVector3 q)
     {
         q = b.PointLePlusProche(c);
         return (c - q).sqrMagnitude <= r * r;
     }
 
-    // -------- OBB / OBB (slides 43–46) --------
     public static bool OverlapOBB(in OBB A, in OBB B)
     {
         CustomVector3[] uA = { A.axes.X, A.axes.Y, A.axes.Z };
@@ -73,34 +64,31 @@ public static class PhaseEtroite
              + e.z * Math.Abs(CustomVector3.Dot(u[2], L));
     }
 
-    // -------- Dispatcher --------
     public static bool Test(CustomRigidbody a, CustomRigidbody b, out Contact c)
     {
         c = default;
 
-        // Sphère vs Sphère (billard, ballon)
         if (a.forme == FormeRigide.Sphere && b.forme == FormeRigide.Sphere)
             return SphereSphere(a.CentreMonde, a.rayon, b.CentreMonde, b.rayon, out c);
 
-        // Sphère vs AABB (brique, sol)
         if (a.forme == FormeRigide.Sphere && b.forme == FormeRigide.AABB)
             return SphereAABBContact(a, b, out c);
-        if (a.forme == FormeRigide.AABB && b.forme == FormeRigide.Sphere)
-            return SphereAABBContact(b, a, out c);
 
-        // AABB vs AABB (cubes empilés)
+        if (a.forme == FormeRigide.AABB && b.forme == FormeRigide.Sphere)
+        {
+            bool ok = SphereAABBContact(b, a, out c);
+            if (ok) c.normale = -c.normale;   // inverser pour que A → B
+            return ok;
+        }
+
         if (a.forme == FormeRigide.AABB && b.forme == FormeRigide.AABB)
             return AABBAABB(a, b, out c);
 
-        // OBB vs OBB (cubes en rotation — SAT)
         if (a.forme == FormeRigide.OBB && b.forme == FormeRigide.OBB)
         {
             if (!OverlapOBB(a.OBBMonde, b.OBBMonde)) return false;
-            // Pour la réponse, on utilise un contact approché : face de plus faible recouvrement.
-            // On délègue au solver d'impulsion OBB si tu l'ajoutes, sinon on renvoie un contact de
-            // pénétration nulle centré entre les deux centres.
             c.normale = (b.CentreMonde - a.CentreMonde).normalized;
-            c.profondeur = 0f;
+            c.profondeur = 0.01f;
             c.point = (a.CentreMonde + b.CentreMonde) * 0.5f;
             return true;
         }
@@ -114,39 +102,42 @@ public static class PhaseEtroite
         CustomVector3 centre = sphere.CentreMonde;
         AABB b = box.Volume;
 
-        if (!SphereAABB(centre, sphere.rayon, b, out CustomVector3 q)) return false;
-
+        CustomVector3 q = b.PointLePlusProche(centre);
         CustomVector3 d = centre - q;
         float dist2 = d.sqrMagnitude;
 
-        if (dist2 > 1e-12f)
+        if (dist2 > sphere.rayon * sphere.rayon) return false;
+
+        if (dist2 > 1e-10f)
         {
             float dist = (float)Math.Sqrt(dist2);
-            c.normale = d / dist;                     // de la boîte vers la sphère
+            // Normale : de la sphère vers la boîte
+            c.normale = -d / dist;
             c.profondeur = sphere.rayon - dist;
             c.point = q;
         }
         else
         {
-            // Centre à l'intérieur de la boîte : prendre la face la plus proche
             CustomVector3 e = b.etendue;
             CustomVector3 rel = centre - b.centre;
             float dx = e.x - Math.Abs(rel.x);
             float dy = e.y - Math.Abs(rel.y);
             float dz = e.z - Math.Abs(rel.z);
+
+            CustomVector3 n;
             if (dx < dy && dx < dz)
-                c.normale = new CustomVector3(rel.x >= 0 ? 1f : -1f, 0, 0);
+                n = new CustomVector3(rel.x >= 0 ? 1f : -1f, 0, 0);
             else if (dy < dz)
-                c.normale = new CustomVector3(0, rel.y >= 0 ? 1f : -1f, 0);
+                n = new CustomVector3(0, rel.y >= 0 ? 1f : -1f, 0);
             else
-                c.normale = new CustomVector3(0, 0, rel.z >= 0 ? 1f : -1f);
+                n = new CustomVector3(0, 0, rel.z >= 0 ? 1f : -1f);
+
+            // On veut la normale de la sphère vers la boîte → on inverse
+            c.normale = -n;
             c.profondeur = sphere.rayon + Math.Min(dx, Math.Min(dy, dz));
             c.point = centre;
         }
 
-        // On veut une normale de A (sphere) vers B (box) pour ResoudreContacts ;
-        // ici normale pointe de la boîte vers la sphère, on l'inverse.
-        c.normale = -c.normale;
         return true;
     }
 

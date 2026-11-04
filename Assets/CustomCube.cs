@@ -21,14 +21,13 @@ public class CustomCube : MonoBehaviour
 
     public float GravityCenter;
 
-    private Vector3[] worldVertices; // A..H after the matrix
+    private Vector3[] worldVertices;
 
     private Vector3[] LocalVertices()
     {
         return new[] { vertexA, vertexB, vertexC, vertexD, vertexE, vertexF, vertexG, vertexH };
     }
 
-    /// <summary>Applies the 4x4 matrix to every vertex (manual multiplication, no Transform).</summary>
     public void ApplyTransformation(Matrix4x4 m)
     {
         Vector3[] local = LocalVertices();
@@ -46,16 +45,18 @@ public class CustomCube : MonoBehaviour
 
     private void OnDrawGizmos()
     {
+        // Désactivé en Play : RenduSolide affiche les meshes 3D
+        if (Application.isPlaying) return;
+
         Gizmos.color = Color.green;
 
-        // Edit mode: local vertices. Play mode: the transformed ones.
-        Vector3[] p = (Application.isPlaying && worldVertices != null) ? worldVertices : LocalVertices();
+        Vector3[] p = LocalVertices();
 
         for (int i = 0; i < 4; i++)
         {
-            Gizmos.DrawLine(p[i], p[(i + 1) % 4]);          // bottom face
-            Gizmos.DrawLine(p[4 + i], p[4 + (i + 1) % 4]);  // top face
-            Gizmos.DrawLine(p[i], p[4 + i]);                // vertical edges
+            Gizmos.DrawLine(p[i], p[(i + 1) % 4]);
+            Gizmos.DrawLine(p[4 + i], p[4 + (i + 1) % 4]);
+            Gizmos.DrawLine(p[i], p[4 + i]);
         }
     }
 }

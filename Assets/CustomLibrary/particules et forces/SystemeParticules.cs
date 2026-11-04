@@ -5,8 +5,8 @@ using System.Collections.Generic;
 /// Système de particules (Ch.2 Partie 1, slides 30 à 33) :
 ///   - N particules (x, v, m), un temps t ;
 ///   - une LISTE d'objets forces (IForce) ;
+///   - une LISTE de contraintes (IContrainte) projetées après chaque sous-pas ;
 ///   - un solveur ODE (SolveurODE) qui intègre le vecteur d'état de toutes les particules.
-/// Les accélérations sont a = F / m, avec F = somme des forces de la liste.
 /// </summary>
 public class SystemeParticules
 {
@@ -14,6 +14,7 @@ public class SystemeParticules
     public int N;
     public Particule[] p;
     public List<IForce> forces = new List<IForce>();
+    public List<IContrainte> contraintes = new List<IContrainte>();
     public float t;
 
     public ModeIntegration mode = ModeIntegration.RK4;
@@ -32,15 +33,15 @@ public class SystemeParticules
 
     void AllouerBuffers(int n)
     {
-        F = new CustomVector3[n];
-        x0 = new CustomVector3[n];
-        v0 = new CustomVector3[n];
-        xt = new CustomVector3[n];
-        vt = new CustomVector3[n];
-        a1 = new CustomVector3[n];
-        a2 = new CustomVector3[n];
-        a3 = new CustomVector3[n];
-        a4 = new CustomVector3[n];
+        F   = new CustomVector3[n];
+        x0  = new CustomVector3[n];
+        v0  = new CustomVector3[n];
+        xt  = new CustomVector3[n];
+        vt  = new CustomVector3[n];
+        a1  = new CustomVector3[n];
+        a2  = new CustomVector3[n];
+        a3  = new CustomVector3[n];
+        a4  = new CustomVector3[n];
         k2x = new CustomVector3[n];
         k3x = new CustomVector3[n];
     }
@@ -100,13 +101,17 @@ public class SystemeParticules
             a[i] = (p[i].invmass > 0f) ? F[i] * p[i].invmass : CustomVector3.zero;
     }
 
-    /// <summary>Avance le système de dt, en sousPas sous-pas.</summary>
+    /// <summary>Avance le système de dt, en sousPas sous-pas, puis projette les contraintes.</summary>
     public void Avancer(float dt)
     {
         int n = Math.Max(1, sousPas);
         float h = dt / n;
         for (int k = 0; k < n; k++)
+        {
             SolveurODE.Pas(this, h, mode);
+            for (int c = 0; c < contraintes.Count; c++)
+                contraintes[c].Projeter(this);
+        }
 
         for (int k = 0; k < forces.Count; k++)
             forces[k].ApresPas(this);

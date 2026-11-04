@@ -54,7 +54,7 @@ public class CustomRigidbody : MonoBehaviour
     private AABB volume;
 
     public float Mass => Math.Max(0.0001f, mass);
-    public float invMass => 1f / Mass;
+    public float invMass => (mass <= 0f) ? 0f : 1f / mass;
     public CustomVector3 CentreMonde => Application.isPlaying ? state.x : initialPosition;
     public CustomVector3 WorldCenterOfMass => CentreMonde;
     public AABB Volume => volume;
@@ -73,6 +73,19 @@ public class CustomRigidbody : MonoBehaviour
     private void Awake()
     {
         cube = GetComponent<CustomCube>();
+        Reinitialiser();
+    }
+
+    private void Start()
+    {
+        SynchroVisuelle();
+        var monde = PhysicsWorld.Obtenir();
+        if (monde != null) monde.EnregistrerCorps(this);
+    }
+
+    public void Reinitialiser()
+    {
+        if (cube == null) cube = GetComponent<CustomCube>();
 
         float a = Math.Abs(cube.vertexG.x - cube.vertexA.x);
         float b = Math.Abs(cube.vertexG.y - cube.vertexA.y);
@@ -91,21 +104,19 @@ public class CustomRigidbody : MonoBehaviour
         state.P = CustomVector3.zero;
         state.L = CustomVector3.zero;
 
-        RefreshDerived();
+        ForcerRefresh();
         MettreAJourVolume();
+        SynchroVisuelle();
     }
 
-    private void Start()
+    public void ForcerRefresh()
     {
-        SynchroVisuelle();
-        var monde = PhysicsWorld.Obtenir();
-        if (monde != null) monde.EnregistrerCorps(this);
+        RefreshDerived();
     }
 
     private void RefreshDerived()
     {
         velocity = state.P / Mass;
-
         CustomVector3 lBody = state.R.MultiplyTranspose(state.L);
         CustomVector3 wBody = new CustomVector3(
             lBody.x * invIbodyDiag.x,
@@ -116,16 +127,14 @@ public class CustomRigidbody : MonoBehaviour
 
     public void Integrer(float dt)
     {
-        if (invMass <= 0f) return;   // corps fixe : n'intègre pas
+        if (invMass <= 0f) return;
 
         RefreshDerived();
 
         CustomVector3 F = forceAccumulator;
         CustomVector3 tau = torqueAccumulator;
 
-        if (hasGravity)
-            F += gravityForceVector * Mass;
-
+        if (hasGravity) F += gravityForceVector * Mass;
         F += velocity * (-drag);
         tau += angularVelocity * (-angularDrag);
 
@@ -153,14 +162,12 @@ public class CustomRigidbody : MonoBehaviour
             cube.vertexA, cube.vertexB, cube.vertexC, cube.vertexD,
             cube.vertexE, cube.vertexF, cube.vertexG, cube.vertexH
         };
-
         CustomVector3[] monde = new CustomVector3[8];
         for (int i = 0; i < 8; i++)
         {
             CustomVector3 v = new CustomVector3(locaux[i].x, locaux[i].y, locaux[i].z);
             monde[i] = state.R.Multiply(v) + state.x;
         }
-
         volume = AABB.Englobant(monde, 8);
     }
 
@@ -179,6 +186,9 @@ public class CustomRigidbody : MonoBehaviour
     public void AppliquerImpulsion(CustomVector3 j, CustomVector3 p)
     {
         if (invMass <= 0f) return;
+        if (float.IsNaN(j.x) || float.IsNaN(j.y) || float.IsNaN(j.z)) return;
+        if (float.IsInfinity(j.x) || float.IsInfinity(j.y) || float.IsInfinity(j.z)) return;
+
         state.P = state.P + j;
         CustomVector3 r = p - state.x;
         state.L = state.L + CustomVector3.Cross(r, j);
@@ -206,22 +216,15 @@ public class CustomRigidbody : MonoBehaviour
     }
 
     public void ApplyForce(CustomForce force) { force.Execute(this); }
-
     public void ApplyForce(CustomVector3 forceVector, CustomForceMode mode = CustomForceMode.Force)
-    {
-        new CustomForce(forceVector, mode).Execute(this);
-    }
-
+        => new CustomForce(forceVector, mode).Execute(this);
     public void ApplyForceAtPosition(CustomVector3 forceVector, CustomVector3 worldPosition,
                                      CustomForceMode mode = CustomForceMode.Force)
-    {
-        new CustomForce(forceVector, worldPosition, mode).Execute(this);
-    }
+        => new CustomForce(forceVector, worldPosition, mode).Execute(this);
 
     private void OnGUI()
     {
         if (!showStateOnScreen || !Application.isPlaying) return;
-
         string txt =
             "VECTEUR D'ETAT  X(t) = ( x , R , P , L )\n" +
             $"x = ({state.x.x:F3}, {state.x.y:F3}, {state.x.z:F3})\n" +
@@ -229,7 +232,6 @@ public class CustomRigidbody : MonoBehaviour
             $"L = ({state.L.x:F3}, {state.L.y:F3}, {state.L.z:F3})\n" +
             $"v = P/M       = ({velocity.x:F3}, {velocity.y:F3}, {velocity.z:F3})\n" +
             $"w = I^-1 . L  = ({angularVelocity.x:F3}, {angularVelocity.y:F3}, {angularVelocity.z:F3})";
-
         GUI.Box(new Rect(10, 130, 430, 110), txt);
     }
 
