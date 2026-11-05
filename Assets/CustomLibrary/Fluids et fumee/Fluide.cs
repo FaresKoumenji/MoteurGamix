@@ -84,6 +84,7 @@ public class Fluide
         contrainteDensite.lambdaRelaxation = 1f;
         contrainteDensite.rayonContact = 0.95f * espacement;   // distance min entre particules (FLEX Eq. 22)
         couplage = new CouplageFluideSolide(this.h, rho0);
+        couplage.espacement = espacement;
     }
 
     // ------------------------------------------------------------------------------------------
@@ -119,9 +120,11 @@ public class Fluide
         {
             SolveurODE.Pas(systeme, hpas, systeme.mode);
             contrainteDensite.Projeter(systeme);
+            // Le couplage (qui repousse les particules hors des solides) s'applique AVANT les murs :
+            // sinon il peut pousser une particule à travers un mur, et rien ne la ramène.
+            if (couplage != null) couplage.Appliquer(systeme, hpas);
             for (int c = 0; c < systeme.contraintes.Count; c++)
                 systeme.contraintes[c].Projeter(systeme);
-            if (couplage != null) couplage.Appliquer(systeme, hpas);
         }
         for (int k = 0; k < systeme.forces.Count; k++)
             systeme.forces[k].ApresPas(systeme);

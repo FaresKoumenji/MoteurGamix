@@ -24,6 +24,14 @@ public class BoulesDansEau : MonoBehaviour
         new CustomVector3( 2f, 2f, 0f)
     };
 
+    [Header("Affichage de l'eau")]
+    public bool afficherEau = true;
+    public Color couleurEau = new Color(0.15f, 0.4f, 0.9f);
+    [Tooltip("Couleur des particules en contact avec une boule")]
+    public Color couleurContact = new Color(0.7f, 0.95f, 1f);
+    [Tooltip("Murs du récipient translucides pour voir l'eau et les boules")]
+    public bool mursTransparents = true;
+
     [Header("Caméra")]
     public bool placerCameraAutomatiquement = true;
 
@@ -112,13 +120,16 @@ public class BoulesDansEau : MonoBehaviour
         float rh = r * 0.5f;
         var rendu = RenduSolide.Obtenir();
         rendu.AjouterCubeFixe(new Vector3(0, -d - 0.25f, 0), new Vector3(cote + 2, 0.5f, cote + 2), new Color(0.7f, 0.7f, 0.7f));
-        rendu.AjouterCubeFixe(new Vector3(-d - rh, 0, 0), new Vector3(r, cote, cote), new Color(0.6f, 0.6f, 0.6f));
-        rendu.AjouterCubeFixe(new Vector3(d + rh, 0, 0), new Vector3(r, cote, cote), new Color(0.6f, 0.6f, 0.6f));
-        rendu.AjouterCubeFixe(new Vector3(0, 0, -d - rh), new Vector3(cote, cote, r), new Color(0.6f, 0.6f, 0.6f));
-        rendu.AjouterCubeFixe(new Vector3(0, 0, d + rh), new Vector3(cote, cote, r), new Color(0.6f, 0.6f, 0.6f));
+        Mur(rendu, new Vector3(-d - rh, 0, 0), new Vector3(r, cote, cote));
+        Mur(rendu, new Vector3(d + rh, 0, 0), new Vector3(r, cote, cote));
+        Mur(rendu, new Vector3(0, 0, -d - rh), new Vector3(cote, cote, r));
+        Mur(rendu, new Vector3(0, 0, d + rh), new Vector3(cote, cote, r));
 
-        if (nbParticulesEau > 0)
-            rendu.AjouterParticules(eau.systeme, eau.h * 0.22f, new Color(0.2f, 0.6f, 1f));
+        if (afficherEau && nbParticulesEau > 0)
+        {
+            var renduEau = new GameObject("RenduEau").AddComponent<RenduEauInteractif>();
+            renduEau.Init(eau.systeme, eau.couplage.solides, eau.h, couleurEau, couleurContact);
+        }
 
         var couleurs = new Color[] { new Color(1f, 0.4f, 0.4f), new Color(1f, 0.9f, 0.3f), new Color(0.4f, 0.9f, 0.4f) };
         for (int i = 0; i < eau.couplage.solides.Count; i++)
@@ -126,15 +137,13 @@ public class BoulesDansEau : MonoBehaviour
 
         // Mesure de profondeur : niveau d'eau initial = fond + hauteur de remplissage (cote * 0.55)
         float niveauEau = Fluide.NiveauSurface(cote, hauteurRemplissage);
-        rendu.AjouterCubeFixeTransparent(new Vector3(0f, niveauEau, 0f),
-                                         new Vector3(cote, 0.02f, cote),
-                                         new Color(0.3f, 0.7f, 1f), 0.25f);
 
         var noms = new string[eau.couplage.solides.Count];
         for (int i = 0; i < noms.Length; i++)
             noms[i] = "Boule " + i + " (rho " + (i < densites.Length ? densites[i] : 0f) + ")";
         mesure = new MesureProfondeur(niveauEau, eau.couplage.solides, noms, couleurs, -d, d);
         mesure.eau = eau.systeme;   // la surface affichée suit l'eau réelle
+
 
         if (placerCameraAutomatiquement) PlacerCamera();
 
@@ -149,6 +158,13 @@ public class BoulesDansEau : MonoBehaviour
     void OnGUI()
     {
         if (mesure != null) mesure.DessinerGUI();
+    }
+
+    void Mur(RenduSolide rendu, Vector3 centre, Vector3 taille)
+    {
+        Color c = new Color(0.6f, 0.6f, 0.6f);
+        if (mursTransparents) rendu.AjouterCubeFixeTransparent(centre, taille, c, 0.25f);
+        else rendu.AjouterCubeFixe(centre, taille, c);
     }
 
     void PlacerCamera()

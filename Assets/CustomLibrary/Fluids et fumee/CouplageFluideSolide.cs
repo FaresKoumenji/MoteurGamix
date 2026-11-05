@@ -8,6 +8,8 @@ public class CouplageFluideSolide
     public float sSolide = 1f;
     public float rho0 = 1000f;
     public float traineeSolide = 1.5f;
+    /// <summary>Espacement initial des particules d'eau (renseigné par Fluide). 0 = déduit de h (h = 2.2 x espacement).</summary>
+    public float espacement = 0f;
 
     float poly6;
 
@@ -56,7 +58,11 @@ public class CouplageFluideSolide
             CustomVector3 velSolide = solides[k].velocity;
             CustomVector3 vEau = CustomVector3.zero;
             int nEau = 0;
-            float rhoEau = 0f;      // densité SPH de l'eau au centre du solide
+
+            // Surface locale de l'eau sous/autour du solide, déduite des particules
+            float esp = espacement > 0f ? espacement : h / 2.2f;
+            float rHoriz = rs[k] + esp;
+            float ySurface = float.NegativeInfinity;
 
             for (int i = 0; i < s.N; i++)
             {
@@ -76,21 +82,27 @@ public class CouplageFluideSolide
                     if (vrel < 0f) s.p[i].v = s.p[i].v - n * vrel;
                 }
 
-                // Densité d'eau au centre du solide : rho = somme m_j W(|x_c - x_j|)
-                float w = Poly6(dist * dist);
-                if (w <= 0f) continue;
-                rhoEau += s.p[i].m * w;
+                // Surface locale : la particule la plus haute dans l'empreinte horizontale du solide
+                // (on ignore celles qui sont bien au-dessus du solide : éclaboussures)
+                if (d.x * d.x + d.z * d.z <= rHoriz * rHoriz && s.p[i].x.y <= xs[k].y + rs[k] + esp)
+                    ySurface = Math.Max(ySurface, s.p[i].x.y + 0.5f * esp);
 
                 // Pour la traînée visqueuse
                 vEau += s.p[i].v;
                 nEau++;
             }
 
-            // Fraction immergée : 0 dans l'air, 1 dans l'eau, ~0.5 quand le centre est à la surface
-            float immersion = Math.Min(1f, Math.Max(0f, rhoEau / rho0));
+            // Volume immergé : calotte sphérique de hauteur delta sous la surface locale
+            //   V_calotte = pi . delta^2 . (3r - delta) / 3     (delta = 0 : hors de l'eau, delta = 2r : tout immergé)
+            float r = rs[k];
+            float delta = 0f;
+            if (!float.IsNegativeInfinity(ySurface))
+                delta = Math.Min(2f * r, Math.Max(0f, ySurface - (xs[k].y - r)));
+            float vImmerge = (float)Math.PI * delta * delta * (3f * r - delta) / 3f;
+            float immersion = vImmerge / VolumeSphere(r);
 
-            // Poussée d'Archimède : F = immersion . rho0 . V . g, vers le haut (-g), appliquée au centre
-            float poussee = immersion * rho0 * VolumeSphere(rs[k]) * 9.81f * sSolide;
+            // Poussée d'Archimède : F = rho0 . V_immergé . g, vers le haut, appliquée au centre
+            float poussee = rho0 * vImmerge * 9.81f * sSolide;
             CustomVector3 impulsion = new CustomVector3(0f, poussee * dt, 0f);
 
             // Traînée visqueuse : seulement dans l'eau
