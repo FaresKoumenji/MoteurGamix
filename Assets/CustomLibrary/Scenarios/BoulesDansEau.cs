@@ -6,6 +6,12 @@ public class BoulesDansEau : MonoBehaviour
     [Header("Récipient")]
     public float cote = 6f;
     public int nbParticulesEau = 0;
+    [Tooltip("Si coché, le nombre de particules est calculé pour que l'eau soit continue (voir espacementEau)")]
+    public bool nbParticulesAuto = true;
+    [Tooltip("Distance entre particules à l'état initial. Doit rester proche de hLissage (<= 0.8 x h), sinon l'eau ne forme pas un fluide continu")]
+    public float espacementEau = 0.28f;
+    [Tooltip("Hauteur d'eau = cote x cette fraction")]
+    [Range(0.2f, 0.9f)] public float hauteurRemplissage = 0.55f;
     public float hLissage = 0.5f;
     public float rho0 = 1000f;
 
@@ -29,6 +35,7 @@ public class BoulesDansEau : MonoBehaviour
     private PhysicsWorld monde;
     private Fluide eau;
     private float d;
+    private MesureProfondeur mesure;
 
     void Start()
     {
@@ -36,6 +43,11 @@ public class BoulesDansEau : MonoBehaviour
         d = cote * 0.5f;
 
         if (nbParticulesEau < 0) nbParticulesEau = 0;
+        if (nbParticulesAuto)
+        {
+            nbParticulesEau = Fluide.NbParticulesPourEspacement(cote, hauteurRemplissage, espacementEau);
+            Debug.Log($"[EAU] {nbParticulesEau} particules");
+        }
 
         var fond = new ContraintePlanFluide(new CustomVector3(0f, 1f, 0f), new CustomVector3(0f, -d, 0f));
         var murGauche = new ContraintePlanFluide(new CustomVector3(1f, 0f, 0f), new CustomVector3(-d, 0f, 0f));
@@ -44,7 +56,7 @@ public class BoulesDansEau : MonoBehaviour
         var murAvant = new ContraintePlanFluide(new CustomVector3(0f, 0f, -1f), new CustomVector3(0f, 0f, d));
 
         CustomVector3 origine = new CustomVector3(-d, -d, -d);
-        CustomVector3 taille = new CustomVector3(cote, cote * 0.55f, cote);
+        CustomVector3 taille = new CustomVector3(cote, cote * hauteurRemplissage, cote);
 
         eau = new Fluide(nbParticulesEau, origine, taille, hLissage, rho0);
         eau.systeme.contraintes.Add(fond);
@@ -61,10 +73,9 @@ public class BoulesDansEau : MonoBehaviour
         for (int i = 0; i < densites.Length && i < positions.Length; i++)
         {
             float rho = densites[i];
-            float volume = (4f / 3f) * Mathf.PI * rayonBoule * rayonBoule * rayonBoule;
-            float masse = rho * volume;
+            float masse = CouplageFluideSolide.MasseSphere(rho, rayonBoule);
 
-            Debug.Log($"[BOULE {i}] rho={rho}, rayon={rayonBoule}, volume={volume:F4}, masse={masse:F2}");
+            Debug.Log($"[BOULE {i}] rho={rho}, rayon={rayonBoule}, masse={masse:F2}");
 
             GameObject go = new GameObject($"Boule_{i}");
             go.AddComponent<CustomCube>();
@@ -113,9 +124,31 @@ public class BoulesDansEau : MonoBehaviour
         for (int i = 0; i < eau.couplage.solides.Count; i++)
             rendu.AjouterRigidbody(eau.couplage.solides[i], couleurs[i % couleurs.Length]);
 
+        // Mesure de profondeur : niveau d'eau initial = fond + hauteur de remplissage (cote * 0.55)
+        float niveauEau = Fluide.NiveauSurface(cote, hauteurRemplissage);
+        rendu.AjouterCubeFixeTransparent(new Vector3(0f, niveauEau, 0f),
+                                         new Vector3(cote, 0.02f, cote),
+                                         new Color(0.3f, 0.7f, 1f), 0.25f);
+
+        var noms = new string[eau.couplage.solides.Count];
+        for (int i = 0; i < noms.Length; i++)
+            noms[i] = "Boule " + i + " (rho " + (i < densites.Length ? densites[i] : 0f) + ")";
+        mesure = new MesureProfondeur(niveauEau, eau.couplage.solides, noms, couleurs, -d, d);
+        mesure.eau = eau.systeme;   // la surface affichée suit l'eau réelle
+
         if (placerCameraAutomatiquement) PlacerCamera();
 
         Debug.Log($"[MONDE] {monde.corps.Count} corps enregistrés");
+    }
+
+    void Update()
+    {
+        if (mesure != null) mesure.Mettre(Time.deltaTime);
+    }
+
+    void OnGUI()
+    {
+        if (mesure != null) mesure.DessinerGUI();
     }
 
     void PlacerCamera()
@@ -159,5 +192,8 @@ public class BoulesDansEau : MonoBehaviour
         return rb;
     }
 
-    void OnDrawGizmos() { }
+    void OnDrawGizmos()
+    {
+        if (mesure != null) mesure.DessinerGizmos(d);
+    }
 }

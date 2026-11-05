@@ -86,6 +86,31 @@ public class Fluide
         couplage = new CouplageFluideSolide(this.h, rho0);
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Remplissage d'un récipient cubique (utilisé par les scénarios, pas de formule à refaire)
+    // ------------------------------------------------------------------------------------------
+
+    /// <summary>Volume d'eau d'un récipient cubique de côté `cote` rempli à `fraction` de sa hauteur.</summary>
+    public static float VolumeRemplissage(float cote, float fraction)
+    {
+        return cote * cote * (cote * fraction);
+    }
+
+    /// <summary>Hauteur y de la surface au repos (le fond est à y = -cote/2).</summary>
+    public static float NiveauSurface(float cote, float fraction)
+    {
+        return -cote * 0.5f + cote * fraction;
+    }
+
+    /// <summary>
+    /// Nombre de particules à demander au constructeur pour un espacement initial voulu :
+    /// une particule par cellule d'arête `espacement` (le constructeur impose h >= 2.2 x espacement).
+    /// </summary>
+    public static int NbParticulesPourEspacement(float cote, float fraction, float espacement)
+    {
+        return (int)Math.Ceiling(VolumeRemplissage(cote, fraction) / (espacement * espacement * espacement));
+    }
+
     public void Avancer(float dt)
     {
         int n = Math.Max(1, systeme.sousPas);

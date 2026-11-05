@@ -149,13 +149,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BoulesDansEau
   cote: 6
-  nbParticulesEau: 60
+  nbParticulesEau: 100
+  nbParticulesAuto: 0
+  espacementEau: 0.28
+  hauteurRemplissage: 0.55
   hLissage: 0.35
   rho0: 1000
   rayonBoule: 0.6
   densites:
-  - 400
-  - 1000
+  - 1
+  - 1
   - 1600
   positions:
   - x: -2

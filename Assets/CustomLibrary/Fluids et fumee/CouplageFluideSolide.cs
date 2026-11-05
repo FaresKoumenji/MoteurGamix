@@ -25,6 +25,17 @@ public class CouplageFluideSolide
         return poly6 * d * d * d;
     }
 
+    /// <summary>Masse d'une sphère pleine de densité rho (kg/m3) et de rayon r (m).</summary>
+    public static float MasseSphere(float rho, float rayon)
+    {
+        return rho * VolumeSphere(rayon);
+    }
+
+    public static float VolumeSphere(float rayon)
+    {
+        return (4f / 3f) * (float)Math.PI * rayon * rayon * rayon;
+    }
+
     public void Appliquer(SystemeParticules s, float dt)
     {
         if (solides.Count == 0) return;
@@ -42,10 +53,10 @@ public class CouplageFluideSolide
         {
             if (solides[k].invMass <= 0f) continue;
 
-            CustomVector3 forcePression = CustomVector3.zero;
             CustomVector3 velSolide = solides[k].velocity;
             CustomVector3 vEau = CustomVector3.zero;
             int nEau = 0;
+            float rhoEau = 0f;      // densité SPH de l'eau au centre du solide
 
             for (int i = 0; i < s.N; i++)
             {
@@ -65,22 +76,27 @@ public class CouplageFluideSolide
                     if (vrel < 0f) s.p[i].v = s.p[i].v - n * vrel;
                 }
 
-                // Poussée d'Archimède
+                // Densité d'eau au centre du solide : rho = somme m_j W(|x_c - x_j|)
                 float w = Poly6(dist * dist);
                 if (w <= 0f) continue;
-                float dm = s.p[i].m * w;
-                CustomVector3 dir = d / Math.Max(1e-6f, dist);
-                forcePression += dir * (dm * rho0 * 9.81f / Math.Max(0.01f, s.p[i].m));
+                rhoEau += s.p[i].m * w;
 
                 // Pour la traînée visqueuse
                 vEau += s.p[i].v;
                 nEau++;
             }
 
-            CustomVector3 impulsion = forcePression * (dt * sSolide / rho0);
+            // Fraction immergée : 0 dans l'air, 1 dans l'eau, ~0.5 quand le centre est à la surface
+            float immersion = Math.Min(1f, Math.Max(0f, rhoEau / rho0));
+
+            // Poussée d'Archimède : F = immersion . rho0 . V . g, vers le haut (-g), appliquée au centre
+            float poussee = immersion * rho0 * VolumeSphere(rs[k]) * 9.81f * sSolide;
+            CustomVector3 impulsion = new CustomVector3(0f, poussee * dt, 0f);
+
+            // Traînée visqueuse : seulement dans l'eau
             if (nEau > 0) vEau = vEau / nEau;
             CustomVector3 vRel = velSolide - vEau;
-            CustomVector3 forceTrainee = vRel * (-traineeSolide * solides[k].Mass);
+            CustomVector3 forceTrainee = vRel * (-traineeSolide * solides[k].Mass * immersion);
 
             CustomVector3 impTotale = impulsion + forceTrainee * dt;
             solides[k].AppliquerImpulsion(impTotale, xs[k]);
